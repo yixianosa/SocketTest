@@ -8,6 +8,9 @@ import javax.swing.border.*;
 
 import java.net.*;
 import java.io.*;
+import java.security.SecureRandom;
+import java.security.KeyStore;
+import javax.net.ssl.*;
 
 import net.sf.sockettest.*;
 
@@ -34,7 +37,7 @@ public class SocketTestServer extends JPanel implements NetService/*JFrame*/ {
     private JLabel logoLabel = new JLabel("SocketTest v 3.0", logo,
             JLabel.CENTER);
     private JTextField ipField = new JTextField("0.0.0.0",20);
-    private JTextField portField = new JTextField("21",10);
+    private JTextField portField = new JTextField("8887",10);
     private JButton portButton = new JButton("Port");
     private JButton connectButton = new JButton("Start Listening");
     
@@ -56,6 +59,10 @@ public class SocketTestServer extends JPanel implements NetService/*JFrame*/ {
     private ServerSocket server;
     private SocketServer socketServer;
     private PrintWriter out;
+    private SSLConfig sslConfig = new SSLConfig();
+    private JButton sslButton = new JButton("SSL");
+    private JLabel charsetLabel = new JLabel("Charset");
+    private JTextField charsetField = new JTextField("UTF-8", 6);
     
     protected final JFrame parent;
     
@@ -63,6 +70,14 @@ public class SocketTestServer extends JPanel implements NetService/*JFrame*/ {
         //Container cp = getContentPane();
         this.parent = parent;
         Container cp = this;
+
+        // Default SSL config
+        sslConfig.setEnabled(true);
+        sslConfig.setKeyStorePath("ssl/server.p12");
+        sslConfig.setKeyStorePassword("changeit");
+        sslConfig.setTrustStorePath("ssl/server-truststore.jks");
+        sslConfig.setTrustStorePassword("changeit");
+        sslConfig.setNeedClientAuth(true);
         
         topPanel = new JPanel();
         toPanel = new JPanel();
@@ -135,6 +150,36 @@ public class SocketTestServer extends JPanel implements NetService/*JFrame*/ {
         connectButton.setToolTipText("Start Listening");
         connectButton.addActionListener(connectListener);
         toPanel.add(connectButton, gbc);
+        
+        gbc.weightx = 0.0;
+        gbc.gridy = 1;
+        gbc.gridx = 4;
+        gbc.gridwidth = 1;
+        gbc.fill = GridBagConstraints.NONE;
+        sslButton.setToolTipText("Configure SSL/TLS Settings");
+        sslButton.setMnemonic('L');
+        sslButton.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                SSLDialog dialog = new SSLDialog(parent, "SSL Configuration", sslConfig, true);
+                dialog.showDialog();
+            }
+        });
+        toPanel.add(sslButton, gbc);
+
+        // Charset
+        gbc.weightx = 0.0;
+        gbc.gridy = 2;
+        gbc.gridx = 0;
+        gbc.gridwidth = 1;
+        gbc.fill = GridBagConstraints.NONE;
+        toPanel.add(charsetLabel, gbc);
+
+        gbc.weightx = 1.0;
+        gbc.gridy = 2;
+        gbc.gridx = 1;
+        gbc.gridwidth = 2;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        toPanel.add(charsetField, gbc);
         
         toPanel.setBorder(BorderFactory.createTitledBorder(new EtchedBorder(),"Listen On"));
         topPanel.setLayout(new BorderLayout(10,0));
@@ -344,7 +389,11 @@ public class SocketTestServer extends JPanel implements NetService/*JFrame*/ {
                 bindAddr = InetAddress.getByName(ip);
             else
                 bindAddr = null;
-            server = new ServerSocket(portNo,1,bindAddr);
+            if (!sslConfig.isEnabled()) {
+                server = new ServerSocket(portNo, 1, bindAddr);
+            } else {
+                server = createSSLServerSocket(portNo);
+            }
             
             ipField.setEditable(false);
             portField.setEditable(false);
@@ -364,7 +413,7 @@ public class SocketTestServer extends JPanel implements NetService/*JFrame*/ {
         setCursor(Cursor.getPredefinedCursor(Cursor.DEFAULT_CURSOR));
         messagesField.setText("> Server Started on Port: "+portNo+NEW_LINE);
         append("> ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~");
-        socketServer=SocketServer.handle(this,server);
+        socketServer=SocketServer.handle(this,server, charsetField.getText());
         //sendField.requestFocus();
     }
     //disconnect a client
@@ -429,15 +478,17 @@ public class SocketTestServer extends JPanel implements NetService/*JFrame*/ {
     
     public void appendnoNewLine(String msg) {
         messagesField.append(msg);
+        String lineSeparator = System.lineSeparator(); // 获取系统换行符（如 Windows 是 "\r\n"，Linux/macOS 是 "\n"）
+        messagesField.append(lineSeparator); // 追加换行符
         messagesField.setCaretPosition(messagesField.getText().length());
     }
-    
+
     public void sendMessage(String s) {
         setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
         try	{
             if(out==null) {
                 out = new PrintWriter(new BufferedWriter(
-                        new OutputStreamWriter(socket.getOutputStream())), true);
+                        new OutputStreamWriter(socket.getOutputStream(),charsetField.getText())), true);
             }
             append("S: "+s);
             out.print(s+NEW_LINE);
@@ -466,6 +517,52 @@ public class SocketTestServer extends JPanel implements NetService/*JFrame*/ {
         centerPanel.setBorder(cb);
         invalidate();
         repaint();
+    }
+
+    /**
+     * Create SSL/TLS ServerSocket with mutual TLS (mTLS) support.
+     * Requires KeyStore for server certificate.
+     * If TrustStore is provided and needClientAuth is true, enables mTLS.
+     */
+    private ServerSocket createSSLServerSocket(int portNo) throws Exception {
+        SSLContext context = SSLContext.getInstance("TLS");
+
+        // KeyManager: server certificate (required for SSL)
+        KeyManagerFactory kmf = KeyManagerFactory.getInstance("SunX509");
+        KeyStore ks = KeyStore.getInstance(KeyStore.getDefaultType());
+        String ksPath = sslConfig.getKeyStorePath();
+        if (ksPath == null || ksPath.trim().isEmpty()) {
+            throw new IllegalArgumentException("KeyStore is required for SSL Server");
+        }
+        try (FileInputStream fis = new FileInputStream(ksPath)) {
+            ks.load(fis, sslConfig.getKeyStorePassword().toCharArray());
+        }
+        kmf.init(ks, sslConfig.getKeyStorePassword().toCharArray());
+
+        // TrustManager: client certificate verification (optional)
+        TrustManager[] tms;
+        String tsPath = sslConfig.getTrustStorePath();
+        if (tsPath != null && !tsPath.trim().isEmpty()) {
+            TrustManagerFactory tmf = TrustManagerFactory.getInstance("SunX509");
+            KeyStore ts = KeyStore.getInstance(KeyStore.getDefaultType());
+            try (FileInputStream fis = new FileInputStream(tsPath)) {
+                ts.load(fis, sslConfig.getTrustStorePassword().toCharArray());
+            }
+            tmf.init(ts);
+            tms = tmf.getTrustManagers();
+        } else {
+            tms = new TrustManager[]{new MyTrustManager(SocketTestServer.this)};
+        }
+
+        context.init(kmf.getKeyManagers(), tms, new SecureRandom());
+        SSLServerSocketFactory sf = context.getServerSocketFactory();
+        SSLServerSocket sslServerSocket = (SSLServerSocket) sf.createServerSocket(portNo);
+
+        if (sslConfig.isNeedClientAuth()) {
+            sslServerSocket.setNeedClientAuth(true);
+        }
+
+        return sslServerSocket;
     }
 
     public void setUpConfiguration(String ip, String port) {

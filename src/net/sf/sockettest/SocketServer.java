@@ -17,6 +17,7 @@ public class SocketServer extends Thread {
     private BufferedInputStream in;
     private boolean desonnected=false;
     private boolean stop = false;
+    private String charset = "UTF-8";
     
     //disconnect client
     public synchronized void setDesonnected(boolean cr) {
@@ -42,10 +43,13 @@ public class SocketServer extends Thread {
         }
     }
     
-    private SocketServer(SocketTestServer parent, ServerSocket s) {
+    private SocketServer(SocketTestServer parent, ServerSocket s, String charset) {
         super("SocketServer");
         this.parent = parent;
         server=s;
+        if(charset!=null && charset.length()>0){
+            this.charset = charset;
+        }
         setStop(false);
         setDesonnected(false);
         start();
@@ -54,9 +58,9 @@ public class SocketServer extends Thread {
     
     
     public static synchronized SocketServer handle(SocketTestServer parent,
-            ServerSocket s) {
+            ServerSocket s, String charset) {
         if(socketServer==null)
-            socketServer=new SocketServer(parent, s);
+            socketServer=new SocketServer(parent, s, charset);
         else {
             if(socketServer.server!=null) {
                 try	{
@@ -72,7 +76,7 @@ public class SocketServer extends Thread {
             }
             socketServer.server = null;
             socketServer.socket = null;
-            socketServer=new SocketServer(parent,s);
+            socketServer=new SocketServer(parent,s, charset);
         }
         return socketServer;
     }
@@ -142,20 +146,18 @@ public class SocketServer extends Thread {
         } //end of while
     } //end of startServer
     
-    private static String readInputStream(BufferedInputStream _in)
+    private String readInputStream(BufferedInputStream _in)
     throws IOException {
-        String data = "";
-        int s = _in.read();
-        if(s==-1)
-            return null;
-        data += ""+(char)s;
-        int len = _in.available();
-        System.out.println("Len got : "+len);
-        if(len > 0) {
-            byte[] byteData = new byte[len];
-            _in.read(byteData);
-            data += new String(byteData);
+        // 2. 指定编码（如 UTF-8）转换为字符流
+        InputStreamReader inputStreamReader = new InputStreamReader(_in, charset);
+        // 3. 用 BufferedReader 缓冲字符流，支持逐行读取
+        BufferedReader bufferedReader = new BufferedReader(inputStreamReader);
+
+        String data;
+        // 4. 逐行读取客户端发送的文本（按协议约定的换行符分割）
+        while ((data = bufferedReader.readLine()) != null) {
+            return data;
         }
-        return data;
+        return null;
     }
 }

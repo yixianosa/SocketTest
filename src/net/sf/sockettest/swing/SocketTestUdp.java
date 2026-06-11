@@ -34,7 +34,7 @@ public class SocketTestUdp extends JPanel implements NetService/*JFrame*/ {
             JLabel.CENTER);
 
     private JTextField ipField1 = new JTextField("0.0.0.0", 20);
-    private JTextField portField1 = new JTextField("21", 5);
+    private JTextField portField1 = new JTextField("8887", 5);
     private JButton portButton1 = new JButton("Port");
     private JButton connectButton = new JButton("Start Listening");
 
@@ -44,7 +44,7 @@ public class SocketTestUdp extends JPanel implements NetService/*JFrame*/ {
     private JLabel ipLabel2 = new JLabel("IP Address");
     private JLabel portLabel2 = new JLabel("Port");
     private JTextField ipField2 = new JTextField("127.0.0.1");
-    private JTextField portField2 = new JTextField("21", 5);
+    private JTextField portField2 = new JTextField("8887", 5);
     private JButton portButton2 = new JButton("Port");
     private JLabel sendLabel = new JLabel("Message");
     private JTextField sendField = new JTextField();

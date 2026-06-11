@@ -11,6 +11,7 @@ public class SocketClient extends Thread {
     
     private static SocketClient socketClient=null;
     private Socket socket=null;
+    private String charset = "UTF-8";
     private SocketTestClient parent;
     private BufferedInputStream in;
     private boolean desonnected=false;
@@ -19,17 +20,20 @@ public class SocketClient extends Thread {
         desonnected=cr;
     }
     
-    private SocketClient(SocketTestClient parent, Socket s) {
+    private SocketClient(SocketTestClient parent, Socket s, String charset) {
         super("SocketClient");
         this.parent = parent;
         socket=s;
+        if(charset!=null && charset.length()>0){
+            this.charset = charset;
+        }
         setDesonnected(false);
         start();
     }
     
-    public static synchronized SocketClient handle(SocketTestClient parent, Socket s) {
+    public static synchronized SocketClient handle(SocketTestClient parent, Socket s, String charset) {
         if(socketClient==null)
-            socketClient=new SocketClient(parent, s);
+            socketClient=new SocketClient(parent, s, charset);
         else {
             if(socketClient.socket!=null) {
                 try	{
@@ -39,7 +43,7 @@ public class SocketClient extends Thread {
                 }
             }
             socketClient.socket=null;
-            socketClient=new SocketClient(parent,s);
+            socketClient=new SocketClient(parent, s, charset);
         }
         return socketClient;
     }
@@ -88,7 +92,7 @@ public class SocketClient extends Thread {
         socket=null;
     }//end of run
     
-    private static String readInputStream(BufferedInputStream _in) throws IOException {
+    /*private static String readInputStream(BufferedInputStream _in) throws IOException {
         String data = "";
         int s = _in.read();
         if(s==-1)
@@ -102,6 +106,20 @@ public class SocketClient extends Thread {
             data += new String(byteData);
         }
         return data;
+    }*/
+
+    private String readInputStream(BufferedInputStream _in) throws IOException {
+        // 2. 指定编码（如 UTF-8）转换为字符流
+        InputStreamReader inputStreamReader = new InputStreamReader(_in, charset);
+        // 3. 用 BufferedReader 缓冲字符流，支持逐行读取
+        BufferedReader bufferedReader = new BufferedReader(inputStreamReader);
+
+        String data;
+        // 4. 逐行读取客户端发送的文本（按协议约定的换行符分割）
+        while ((data = bufferedReader.readLine()) != null) {
+            return data;
+        }
+        return null;
     }
     
 }

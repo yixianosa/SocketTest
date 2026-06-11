@@ -6,6 +6,7 @@ import javax.swing.*;
 import javax.swing.event.*;
 import javax.swing.border.*;
 
+import java.security.KeyStore;
 import java.security.SecureRandom;
 
 import java.net.*;
@@ -39,7 +40,9 @@ public class SocketTestClient extends JPanel implements NetService{
     private JLabel logoLabel = new JLabel("SocketTest v 3.0", logo,
             JLabel.CENTER);
     private JTextField ipField = new JTextField("127.0.0.1", 20);
-    private JTextField portField = new JTextField("21", 10);
+    private JTextField portField = new JTextField("8887", 5);
+    private JLabel charsetLabel = new JLabel("Charset");
+    private JTextField charsetField = new JTextField("UTF-8", 2);
     private JButton portButton = new JButton("Port");
     private JButton connectButton = new JButton("Connect");
 
@@ -54,8 +57,8 @@ public class SocketTestClient extends JPanel implements NetService{
     private JButton saveButton = new JButton("Save");
     private JButton clearButton = new JButton("Clear");
 
-    private JCheckBox secureButton = new JCheckBox("Secure");
-    private boolean isSecure = false;
+    private SSLConfig sslConfig = new SSLConfig();
+    private JButton sslButton = new JButton("SSL");
     private GridBagConstraints gbc = new GridBagConstraints();
 
     private Socket socket;
@@ -68,10 +71,19 @@ public class SocketTestClient extends JPanel implements NetService{
         this.parent = parent;
         Container cp = this;
 
+        // Default SSL config
+        sslConfig.setEnabled(true);
+        sslConfig.setKeyStorePath("ssl/client.p12");
+        sslConfig.setKeyStorePassword("changeit");
+        sslConfig.setTrustStorePath("ssl/client-truststore.jks");
+        sslConfig.setTrustStorePassword("changeit");
+
         topPanel = new JPanel();
         toPanel = new JPanel();
         toPanel.setLayout(new GridBagLayout());
         gbc.insets = new Insets(2, 2, 2, 2);
+
+        // IP Label
         gbc.weighty = 0.0;
         gbc.weightx = 0.0;
         gbc.gridx = 0;
@@ -82,9 +94,10 @@ public class SocketTestClient extends JPanel implements NetService{
         gbc.fill = GridBagConstraints.NONE;
         toPanel.add(ipLabel, gbc);
 
+        // IP Field
         gbc.weightx = 1.0; //streach
         gbc.gridx = 1;
-        gbc.gridwidth = 4;
+        gbc.gridwidth = 3;
         gbc.fill = GridBagConstraints.HORIZONTAL;
         ActionListener ipListener = new ActionListener() {
             public void actionPerformed(ActionEvent e) {
@@ -94,7 +107,27 @@ public class SocketTestClient extends JPanel implements NetService{
         ipField.addActionListener(ipListener);
         toPanel.add(ipField, gbc);
 
+        // Port Label
         gbc.weightx = 0.0;
+        gbc.gridx = 4;
+        gbc.gridwidth = 1;
+        gbc.fill = GridBagConstraints.NONE;
+        toPanel.add(portLabel, gbc);
+
+        // Port Field
+        gbc.weightx = 0.5;
+        gbc.gridx = 5;
+        gbc.gridwidth = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        ActionListener connectListener = new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                connect();
+            }
+        };
+        portField.addActionListener(connectListener);
+        toPanel.add(portField, gbc);
+
+        /*gbc.weightx = 0.0;
         gbc.gridy = 1;
         gbc.gridx = 0;
         gbc.gridwidth = 1;
@@ -112,11 +145,27 @@ public class SocketTestClient extends JPanel implements NetService{
             }
         };
         portField.addActionListener(connectListener);
-        toPanel.add(portField, gbc);
+        toPanel.add(portField, gbc);*/
+
+        // Charset Label
+        gbc.weightx = 0.0;
+        gbc.gridy = 1;
+        gbc.gridx = 0;
+        gbc.gridwidth = 1;
+        gbc.fill = GridBagConstraints.NONE;
+        toPanel.add(charsetLabel, gbc);
+
+        // charset 输入框
+        gbc.weightx = 1.0;
+        gbc.gridy = 1;
+        gbc.gridx = 2;
+        gbc.gridwidth = 1;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        toPanel.add(charsetField, gbc);
 
         gbc.weightx = 0.0;
         gbc.gridy = 1;
-        gbc.gridx = 2;
+        gbc.gridx = 3;
         gbc.gridwidth = 1;
         gbc.fill = GridBagConstraints.NONE;
         portButton.setMnemonic('P');
@@ -132,7 +181,7 @@ public class SocketTestClient extends JPanel implements NetService{
 
         gbc.weightx = 0.0;
         gbc.gridy = 1;
-        gbc.gridx = 3;
+        gbc.gridx = 4;
         gbc.gridwidth = 1;
         gbc.fill = GridBagConstraints.NONE;
         connectButton.setMnemonic('C');
@@ -143,17 +192,18 @@ public class SocketTestClient extends JPanel implements NetService{
 
         gbc.weightx = 0.0;
         gbc.gridy = 1;
-        gbc.gridx = 4;
+        gbc.gridx = 5;
         gbc.gridwidth = 1;
         gbc.fill = GridBagConstraints.NONE;
-        secureButton.setToolTipText("Set Has Secure");
-        secureButton.addItemListener(
-                new ItemListener() {
-                    public void itemStateChanged(ItemEvent e) {
-                        isSecure = !isSecure;
-                    }
-                });
-        toPanel.add(secureButton, gbc);
+        sslButton.setToolTipText("Configure SSL/TLS Settings");
+        sslButton.setMnemonic('L');
+        sslButton.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                SSLDialog dialog = new SSLDialog(parent, "SSL Configuration", sslConfig, false);
+                dialog.showDialog();
+            }
+        });
+        toPanel.add(sslButton, gbc);
 
 
         toPanel.setBorder(BorderFactory.createTitledBorder(new EtchedBorder(), "Connect To"));
@@ -311,6 +361,7 @@ public class SocketTestClient extends JPanel implements NetService{
         }
         String ip = ipField.getText();
         String port = portField.getText();
+        String charset = charsetField.getText();
         if (ip == null || ip.equals("")) {
             JOptionPane.showMessageDialog(SocketTestClient.this,
                     "No IP Address. Please enter IP Address",
@@ -350,20 +401,12 @@ public class SocketTestClient extends JPanel implements NetService{
             return;
         }
         try {
-            if (isSecure == false) {
+            if (!sslConfig.isEnabled()) {
                 System.out.println("Connectig in normal mode : " + ip + ":" + portNo);
                 socket = new Socket(ip, portNo);
             } else {
                 System.out.println("Connectig in secure mode : " + ip + ":" + portNo);
-                //SocketFactory factory = SSLSocketFactory.getDefault();
-
-                TrustManager[] tm = new TrustManager[]{new MyTrustManager(SocketTestClient.this)};
-
-                SSLContext context = SSLContext.getInstance("TLS");
-                context.init(new KeyManager[0], tm, new SecureRandom());
-
-                SSLSocketFactory factory = context.getSocketFactory();
-                socket = factory.createSocket(ip, portNo);
+                socket = createSSLSocket(ip, portNo);
             }
 
             ipField.setEditable(false);
@@ -383,7 +426,7 @@ public class SocketTestClient extends JPanel implements NetService{
                 " [" + socket.getInetAddress().getHostAddress() + "] ");
         setCursor(Cursor.getPredefinedCursor(Cursor.DEFAULT_CURSOR));
         messagesField.setText("");
-        socketClient = SocketClient.handle(this, socket);
+        socketClient = SocketClient.handle(this, socket, charset);
         sendField.requestFocus();
     }
 
@@ -427,6 +470,8 @@ public class SocketTestClient extends JPanel implements NetService{
 
     public void appendnoNewLine(String msg) {
         messagesField.append(msg);
+        String lineSeparator = System.lineSeparator(); // 获取系统换行符（如 Windows 是 "\r\n"，Linux/macOS 是 "\n"）
+        messagesField.append(lineSeparator); // 追加换行符
         messagesField.setCaretPosition(messagesField.getText().length());
     }
 
@@ -471,4 +516,47 @@ public class SocketTestClient extends JPanel implements NetService{
         portField.setText(port);
     }
 
+    /**
+     * Create SSL/TLS socket with mutual TLS (mTLS) support.
+     * Loads KeyStore for client certificate and TrustStore for server verification.
+     */
+    private Socket createSSLSocket(String ip, int portNo) throws Exception {
+        SSLContext context = SSLContext.getInstance("TLS");
+
+        // KeyManager: client certificate (optional, for mTLS)
+        KeyManager[] kms = new KeyManager[0];
+        String ksPath = sslConfig.getKeyStorePath();
+        if (ksPath != null && !ksPath.trim().isEmpty()) {
+            KeyManagerFactory kmf = KeyManagerFactory.getInstance("SunX509");
+            KeyStore ks = KeyStore.getInstance(KeyStore.getDefaultType());
+            try (FileInputStream fis = new FileInputStream(ksPath)) {
+                ks.load(fis, sslConfig.getKeyStorePassword().toCharArray());
+            }
+            kmf.init(ks, sslConfig.getKeyStorePassword().toCharArray());
+            kms = kmf.getKeyManagers();
+        }
+
+        // TrustManager: server certificate verification
+        TrustManager[] tms;
+        String tsPath = sslConfig.getTrustStorePath();
+        if (tsPath != null && !tsPath.trim().isEmpty()) {
+            TrustManagerFactory tmf = TrustManagerFactory.getInstance("SunX509");
+            KeyStore ts = KeyStore.getInstance(KeyStore.getDefaultType());
+            try (FileInputStream fis = new FileInputStream(tsPath)) {
+                ts.load(fis, sslConfig.getTrustStorePassword().toCharArray());
+            }
+            tmf.init(ts);
+            tms = tmf.getTrustManagers();
+        } else {
+            tms = new TrustManager[]{new MyTrustManager(SocketTestClient.this)};
+        }
+
+        context.init(kms, tms, new SecureRandom());
+        SSLSocketFactory sf = context.getSocketFactory();
+        return sf.createSocket(ip, portNo);
+    }
+
 }
+
+
+

@@ -58,8 +58,25 @@ public class MyTrustManager implements X509TrustManager {
 		 try {
              sunJSSEX509TrustManager.checkClientTrusted(chain, authType);
          } catch (CertificateException excep) {
-             // do any special handling here, or rethrow exception.
-			 throw excep;
+             /*
+              * Pop up a dialog box asking whether to trust the
+              * client certificate chain (for mTLS).
+              */
+             StringBuffer sb = new StringBuffer();
+             for(int i=0;i<chain.length;i++) {
+                 if(i==0) {
+                     sb.append("Do you want to trust this client? \n\n");
+                     sb.append("Client Certificate:\n\t"+chain[i].getSubjectDN());
+                 } else {
+                     sb.append("\n Issued By:\n \t"+chain[i].getSubjectDN());
+                 }
+             }
+             int option = JOptionPane.showConfirmDialog(parentComponent,
+                 sb.toString(), "Client Certificate Confirmation",
+                 JOptionPane.YES_NO_OPTION, JOptionPane.INFORMATION_MESSAGE);
+             if(option==JOptionPane.NO_OPTION) {
+                 throw new CertificateException("Not Trusted Client Certificate!");
+             }
          }
      }
 
